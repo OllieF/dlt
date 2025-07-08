@@ -1,7 +1,7 @@
 import os
 from copy import deepcopy
 from textwrap import dedent
-from typing import Any, Optional, List, Sequence, cast
+from typing import Any, Optional, List, Sequence, cast, Iterable
 from urllib.parse import urlparse
 
 import clickhouse_connect
@@ -294,14 +294,40 @@ class ClickHouseClient(SqlJobClientWithStagingDataset, SupportsStagingDestinatio
         )
         sql[0] = f"{sql[0]}\nENGINE = {TABLE_ENGINE_TYPE_TO_CLICKHOUSE_ATTR.get(table_type)}"
 
+        if "x-order-by-keys" in table:
+            order_by_setting = table.get("x-order-by-keys")
+            if isinstance(order_by_setting, Iterable):
+                order_by_keys = ", ".join(order_by_setting)
+            elif isinstance(order_by_setting, str):
+                order_by_keys = order_by_setting
+            sql[0] += "\nORDER BY (" + order_by_keys + ")"
+
+        if "x-partition-keys" in table:
+            if isinstance(table.get("x-partition-keys"), Iterable):
+                parition_keys = ", ".join(table.get("x-partition-keys"))
+            elif isinstance(table.get("x-partition-keys"), str):
+                parition_keys = table.get("x-partition-keys")
+            sql[0] += "\nPARTITION BY (" + parition_keys + ")"
+
         if primary_key_list := [
             self.sql_client.escape_column_name(c["name"])
             for c in new_columns
             if c.get("primary_key")
         ]:
-            sql[0] += "\nPRIMARY KEY (" + ", ".join(primary_key_list) + ")"
+            if "x-order-by-keys" in table:
+                if set(primary_key_list).issubset(list(table.get("x-order-by-keys"))):
+                    sql[0] += "\nPRIMARY KEY (" + ", ".join(primary_key_list) + ")"
+                else:
+                    pass
+            else:
+                sql[0] += "\nPRIMARY KEY (" + ", ".join(primary_key_list) + ")"
+        elif "x-order-by-keys" in table:
+            pass
         else:
             sql[0] += "\nPRIMARY KEY tuple()"
+
+        if "x-disk" in table:
+            sql[0] += f"\nSETTINGS disk='{table.get('x-disk')}'"
 
         return sql
 
