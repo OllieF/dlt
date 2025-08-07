@@ -190,16 +190,9 @@ class ModelWriter(DataWriter):
     def write_data(self, items: Sequence[TDataItem]) -> None:
         super().write_data(items)
         for item in items:
-            dialect = item.dialect or (self._caps.sqlglot_dialect if self._caps else None)
-            query = item.query
-            parsed_query = sqlglot.parse_one(query, read=dialect)
-
-            # Ensure the parsed query is a SELECT statement
-            if not isinstance(parsed_query, sqlglot.exp.Select):
-                raise ValueError("Only SELECT statements are allowed to write model files.")
-
-            normalized_query = parsed_query.sql(dialect=dialect)
-            self._f.write("dialect: " + (dialect or "") + "\n" + normalized_query + "\n")
+            dialect = item.query_dialect()
+            query = item.to_sql()
+            self._f.write("dialect: " + (dialect or "") + "\n" + query + "\n")
 
     @classmethod
     def writer_spec(cls) -> FileWriterSpec:
@@ -421,12 +414,14 @@ class CsvWriter(DataWriter):
         delimiter: str = ",",
         include_header: bool = True,
         quoting: CsvQuoting = "quote_needed",
+        lineterminator: str = "\n",
         bytes_encoding: str = "utf-8",
     ) -> None:
         super().__init__(f, caps)
         self.include_header = include_header
         self.delimiter = delimiter
         self.quoting: CsvQuoting = quoting
+        self.lineterminator = lineterminator
         self.writer: csv.DictWriter[str] = None
         self.bytes_encoding = bytes_encoding
 
@@ -450,6 +445,7 @@ class CsvWriter(DataWriter):
             dialect=csv.unix_dialect,
             delimiter=self.delimiter,
             quoting=quoting,
+            lineterminator=self.lineterminator,
         )
         if self.include_header:
             self.writer.writeheader()

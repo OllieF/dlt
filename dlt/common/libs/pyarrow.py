@@ -1077,3 +1077,50 @@ class NameNormalizationCollision(ValueError):
     def __init__(self, reason: str) -> None:
         msg = f"Arrow column name collision after input data normalization. {reason}"
         super().__init__(msg)
+
+
+def add_arrow_metadata(
+    item: Union[pyarrow.Table, pyarrow.RecordBatch], metadata: dict[str, Any]
+) -> pyarrow.Table:
+    # Get current metadata or initialize empty
+    schema = item.schema
+    current = schema.metadata or {}
+
+    # Convert new metadata to bytes and merge
+    update = {k.encode("utf-8"): v.encode("utf-8") for k, v in metadata.items()}
+    merged = current.copy()
+    merged.update(update)
+
+    # Apply updated schema
+    new_schema = schema.with_metadata(merged)
+
+    # Rebuild the object with updated schema
+    if isinstance(item, pyarrow.Table):
+        return pyarrow.Table.from_arrays(item.columns, schema=new_schema)
+    else:  # RecordBatch
+        return pyarrow.RecordBatch.from_arrays(item.columns, schema=new_schema)
+
+
+def set_plus0000_timezone_to_utc(tbl: pyarrow.Table) -> pyarrow.Table:
+    """
+    Convert any +00:00 timestamp columns to UTC.
+    Returns the original table object if nothing needed fixing.
+    """
+    arrays, fields = [], []
+    changed = False
+
+    for col, fld in zip(tbl.columns, tbl.schema):
+        if pyarrow.types.is_timestamp(fld.type) and fld.type.tz == "+00:00":
+            changed = True
+            new_type = pyarrow.timestamp(fld.type.unit, "UTC")
+            arrays.append(pyarrow.compute.cast(col, new_type))
+            fields.append(pyarrow.field(fld.name, new_type, fld.nullable, fld.metadata))
+        else:
+            arrays.append(col)
+            fields.append(fld)
+
+    if not changed:
+        return tbl  # perfect no-op
+
+    new_schema = pyarrow.schema(fields, metadata=tbl.schema.metadata)
+    return pyarrow.Table.from_arrays(arrays, schema=new_schema)

@@ -21,6 +21,7 @@ import re
 
 import sqlglot.expressions
 
+from dlt.common.libs.sqlglot import TSqlGlotDialect
 from dlt.common import pendulum, logger
 from dlt.common.destination.capabilities import DataTypeMapper
 from dlt.common.destination.utils import resolve_replace_strategy
@@ -130,7 +131,7 @@ class SqlLoadJob(RunnableLoadJob):
         return False
 
     def _split_fragments(self, sql: str) -> List[str]:
-        return [s + (";" if not s.endswith(";") else "") for s in sql.split(";") if s.strip()]
+        return [s.strip() for line in sql.split("\n") for s in line.split(";") if s.strip()]
 
     @staticmethod
     def is_sql_job(file_path: str) -> bool:
@@ -160,7 +161,7 @@ class ModelLoadJob(RunnableLoadJob, HasFollowupJobs):
         sql_client.execute_sql(insert_statement)
 
     def _insert_statement_from_select_statement(
-        self, select_dialect: str, select_statement: str
+        self, select_dialect: TSqlGlotDialect, select_statement: str
     ) -> str:
         """
         Generates an INSERT statement from a SELECT statement using sqlglot.
@@ -181,18 +182,18 @@ class ModelLoadJob(RunnableLoadJob, HasFollowupJobs):
                 parts = list(table.parts)
                 if target_catalog:
                     if len(parts) == 3:
-                        table.set("catalog", sqlglot.exp.to_identifier(target_catalog))
-                        table.set("db", sqlglot.exp.to_identifier(parts[1].name))
-                        table.set("this", sqlglot.exp.to_identifier(parts[2].name))
+                        table.set("catalog", sqlglot.to_identifier(target_catalog))
+                        table.set("db", sqlglot.to_identifier(parts[1].name))
+                        table.set("this", sqlglot.to_identifier(parts[2].name))
                     elif len(parts) == 2:
-                        table.set("catalog", sqlglot.exp.to_identifier(target_catalog))
-                        table.set("db", sqlglot.exp.to_identifier(parts[0].name))
-                        table.set("this", sqlglot.exp.to_identifier(parts[1].name))
+                        table.set("catalog", sqlglot.to_identifier(target_catalog))
+                        table.set("db", sqlglot.to_identifier(parts[0].name))
+                        table.set("this", sqlglot.to_identifier(parts[1].name))
                 else:
                     if len(parts) == 3:
                         table.set("catalog", None)
-                        table.set("db", sqlglot.exp.to_identifier(parts[1].name))
-                        table.set("this", sqlglot.exp.to_identifier(parts[2].name))
+                        table.set("db", sqlglot.to_identifier(parts[1].name))
+                        table.set("this", sqlglot.to_identifier(parts[2].name))
 
         # Ensure there's a top-level SELECT, otherwise it doesn't make sense
         top_level_select = parsed_select.find(sqlglot.exp.Select)
@@ -207,7 +208,7 @@ class ModelLoadJob(RunnableLoadJob, HasFollowupJobs):
         columns = []
         for _, expr in enumerate(top_level_select.expressions):
             alias_name = expr.alias
-            columns.append(sqlglot.exp.to_identifier(alias_name))
+            columns.append(sqlglot.to_identifier(alias_name, quoted=True))
 
         # Build final INSERT
         query = sqlglot.expressions.insert(
@@ -408,7 +409,7 @@ class SqlJobClientBase(WithSqlClient, JobClientBase, WithStateSync):
         name = self.sql_client.make_qualified_table_name(self.schema.loads_table_name)
         now_ts = pendulum.now()
         self.sql_client.execute_sql(
-            f"INSERT INTO {name}({self.loads_table_schema_columns}) VALUES(%s, %s, %s, %s, %s);",
+            f"INSERT INTO {name}({self.loads_table_schema_columns}) VALUES(%s, %s, %s, %s, %s)",
             load_id,
             self.schema.name,
             0,
@@ -528,13 +529,13 @@ class SqlJobClientBase(WithSqlClient, JobClientBase, WithStateSync):
         if not schema_name:
             query = (
                 f"SELECT {self.version_table_schema_columns} FROM {name}"
-                f" ORDER BY {c_inserted_at} DESC;"
+                f" ORDER BY {c_inserted_at} DESC"
             )
             return self._row_to_schema_info(query)
         else:
             query = (
                 f"SELECT {self.version_table_schema_columns} FROM {name} WHERE {c_schema_name} = %s"
-                f" ORDER BY {c_inserted_at} DESC;"
+                f" ORDER BY {c_inserted_at} DESC"
             )
             return self._row_to_schema_info(query, schema_name)
 
@@ -579,7 +580,7 @@ class SqlJobClientBase(WithSqlClient, JobClientBase, WithStateSync):
 
         query = (
             f"SELECT {maybe_limit_clause_1} {self.version_table_schema_columns} FROM"
-            f" {table_name} WHERE {c_version_hash} = %s {maybe_limit_clause_2};"
+            f" {table_name} WHERE {c_version_hash} = %s {maybe_limit_clause_2}"
         )
         return self._row_to_schema_info(query, version_hash)
 
@@ -609,7 +610,7 @@ WHERE """
             # placeholder for each table
             table_placeholders = ",".join(["%s"] * len(folded_table_names))
             select_tables_clause = f"AND table_name IN ({table_placeholders})"
-        query += f"table_schema = %s {select_tables_clause} ORDER BY table_name, ordinal_position;"
+        query += f"table_schema = %s {select_tables_clause} ORDER BY table_name, ordinal_position"
 
         return query, db_params
 
@@ -660,8 +661,6 @@ WHERE """
                 self._check_table_update_hints(table_name, new_columns, generate_alter)
                 sql_statements = self._get_table_update_sql(table_name, new_columns, generate_alter)
                 for sql in sql_statements:
-                    if not sql.endswith(";"):
-                        sql += ";"
                     sql_updates.append(sql)
                 # create a schema update for particular table
                 partial_table = copy(self.prepare_load_table(table_name))
@@ -670,8 +669,6 @@ WHERE """
                 schema_update[table_name] = partial_table
                 post_sql_statements = self._get_table_post_update_sql(partial_table)
                 for sql in post_sql_statements:
-                    if not sql.endswith(";"):
-                        sql += ";"
                     post_sql_updates.append(sql)
 
         # add post sql updates at the end
@@ -839,7 +836,7 @@ WHERE """
         """
         name = self.sql_client.make_qualified_table_name(self.schema.version_table_name)
         (c_schema_name,) = self._norm_and_escape_columns("schema_name")
-        self.sql_client.execute_sql(f"DELETE FROM {name} WHERE {c_schema_name} = %s;", schema.name)
+        self.sql_client.execute_sql(f"DELETE FROM {name} WHERE {c_schema_name} = %s", schema.name)
 
     def _update_schema_in_storage(self, schema: Schema) -> None:
         # get schema string or zip
@@ -857,7 +854,7 @@ WHERE """
         # values =  schema.version_hash, schema.name, schema.version, schema.ENGINE_VERSION, str(now_ts), schema_str
         self.sql_client.execute_sql(
             f"INSERT INTO {name}({self.version_table_schema_columns}) VALUES (%s, %s, %s, %s, %s,"
-            " %s);",
+            " %s)",
             schema.version,
             schema.ENGINE_VERSION,
             now_ts,
