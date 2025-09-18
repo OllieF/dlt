@@ -42,6 +42,18 @@ const sidebars = {
         'tutorial/filesystem',
         'tutorial/load-data-from-an-api',
         'tutorial/playground',
+        {
+          type: 'category',
+          label: 'Education',
+          link: {
+            type: 'doc',
+            id: 'tutorial/education',
+          },
+          items: [
+            'tutorial/fundamentals-course',
+            'tutorial/advanced-course',
+          ]
+        },
       ]
     },
     {
@@ -55,6 +67,8 @@ const sidebars = {
       },
       items: [
         'release-notes/1.12.1',
+        'release-notes/1.13-1.14',
+        'release-notes/1.15'
       ]
     },
     {
@@ -166,7 +180,7 @@ const sidebars = {
           type: 'category',
           label: 'Going to production',
           items: [
-            'plus/production/runners',
+            'plus/production/pipeline-runner',
             'plus/production/observability',
           ]
         },
@@ -356,6 +370,7 @@ const sidebars = {
           ]
         },
         'walkthroughs/adjust-a-schema',
+        'general-usage/dashboard',
         {
           type: 'category',
           label: 'Access loaded data',
@@ -364,12 +379,13 @@ const sidebars = {
             id: 'general-usage/dataset-access/index',
           },
           items: [
-            'general-usage/dataset-access/streamlit',
             'general-usage/dataset-access/marimo',
             'general-usage/dataset-access/dataset',
             'general-usage/dataset-access/ibis-backend',
             'general-usage/dataset-access/sql-client',
+            'general-usage/dataset-access/view-dlt-schema',
             'general-usage/destination-tables',
+            'general-usage/dataset-access/streamlit',
           ]
         },
         {

@@ -1,15 +1,14 @@
 import logging
-from typing import Any, Optional, Tuple, cast
+from typing import Optional, Tuple, cast
 
 import sqlglot.expressions as sge
 
-from sqlglot.errors import ParseError, OptimizeError
+from sqlglot.errors import OptimizeError
 from sqlglot.schema import Schema as SQLGlotSchema, ensure_schema
 from sqlglot.optimizer.annotate_types import annotate_types
 from sqlglot.optimizer.qualify import qualify
 
-from dlt.destinations.sql_client import SqlClientBase
-
+import dlt
 from dlt.common.libs.sqlglot import (
     to_sqlglot_type,
     from_sqlglot_type,
@@ -17,19 +16,18 @@ from dlt.common.libs.sqlglot import (
     get_metadata,
     TSqlGlotDialect,
 )
-from dlt.common.schema import Schema
 from dlt.common.schema.typing import (
     TTableSchemaColumns,
     TColumnSchema,
 )
-from dlt.destinations.dataset.exceptions import LineageFailedException
+from dlt.dataset.exceptions import LineageFailedException
 
 
 logger = logging.getLogger(__file__)
 
 
 def create_sqlglot_schema(
-    schema: Schema,
+    schema: dlt.Schema,
     dataset_name: str,
     dialect: TSqlGlotDialect,
 ) -> SQLGlotSchema:
@@ -71,6 +69,7 @@ def create_sqlglot_schema(
 
 
 # NOTE even if `infer_sqlglot_schema=True`, some queries can have undetermined final columns
+# TODO refactor such that it doesn't return a tuple
 def compute_columns_schema(
     expression: sge.Expression,
     sqlglot_schema: SQLGlotSchema,

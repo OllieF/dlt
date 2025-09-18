@@ -47,7 +47,7 @@ DATA_TYPE_MAP = {
 
 
 def create_ibis_backend(
-    destination: TDestinationReferenceArg, client: JobClientBase
+    destination: TDestinationReferenceArg, client: JobClientBase, read_only: bool = False
 ) -> BaseBackend:
     """Create a given ibis backend for a destination client and dataset."""
 
@@ -62,6 +62,8 @@ def create_ibis_backend(
         import duckdb
 
         assert isinstance(client, DuckDbClient)
+        # always open in read only mode
+        client.config.credentials.read_only = read_only
         # open connection, apply all settings and pragmas
         duck_conn = client.config.credentials.borrow_conn()
         # move main connection ownership to ibis
@@ -191,7 +193,7 @@ def create_ibis_backend(
         # does not work yet.
         raise NotImplementedError(
             f"Destination type `{Destination.from_reference(destination).destination_type}` is not"
-            " supported."
+            " supported by the Ibis backend."
         )
 
     return con
